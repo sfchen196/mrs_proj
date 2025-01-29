@@ -3,8 +3,8 @@ import random
 from boids import Boid
 
 class CollectiveMemoryBoid(Boid):
-    def __init__(self, position, walls):
-        super().__init__(position, walls)
+    def __init__(self, position):
+        super().__init__(position)
         self.history = []
         self.history_length = 15
         self.individual_speed = random.uniform(0.8, 1.2)
