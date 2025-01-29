@@ -27,13 +27,17 @@ class Boid:
 
     def bounce(self, boids):
         if self.is_touching_wall(self.wall_positions):
-            if walls_visible:
+            try:
                 boids.remove(self)
+                return True  # Indicate that boid was removed
+            except ValueError:
+                pass
         else:
             if self.position[0] <= 0 or self.position[0] >= config.WIDTH:
                 self.velocity[0] *= -1
             if self.position[1] <= 0 or self.position[1] >= config.HEIGHT:
                 self.velocity[1] *= -1
+        return False
 
     def is_touching_wall(self, wall_positions):
         for wall in wall_positions:
