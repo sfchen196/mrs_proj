@@ -3,11 +3,10 @@ import config
 from boids import Boid
 from s_boids import DirectedBoid
 from viz import create_boids, draw_translucent_text, draw_walls, screen, clock
-from walls import walls_visible, wall_positions
+import walls
 from sliders import speed_slider, alignment_slider, cohesion_slider, separation_slider, neighbor_radius_slider, separation_radius_slider, draw_sliders, handle_slider_events
 
 def menu():
-    global walls_visible
 
     font = pygame.font.SysFont(None, 55)
     small_font = pygame.font.SysFont(None, 30)
@@ -19,7 +18,7 @@ def menu():
             font.render("Press 1 for Basic Boids", True, (255, 255, 255)),
             font.render("Press 2 for Directed Boids", True, (255, 255, 255)),
             font.render("Press 3 for Collective Memory", True, (255, 255, 255)),
-            small_font.render(f"Walls: {'Visible' if walls_visible else 'Hidden'} (Press W)", True, (255, 255, 255)),
+            small_font.render(f"Walls: {'Visible' if walls.walls_visible else 'Hidden'} (Press W)", True, (255, 255, 255)),
             font.render("Press ESC/Q to Exit", True, (255, 255, 255))
         ]
 
@@ -42,7 +41,7 @@ def menu():
                 elif event.key == pygame.K_3:
                     run_simulation(use_collective_memory=True)
                 elif event.key == pygame.K_w:
-                    walls_visible = not walls_visible
+                    walls.walls_visible = not walls.walls_visible
                 elif event.key in (pygame.K_ESCAPE, pygame.K_q):
                     pygame.quit()
                     return
@@ -88,8 +87,8 @@ def run_simulation(use_directed_boids=False, use_collective_memory=False):
 
         draw_sliders()
 
-        if walls_visible:
-            draw_walls(wall_positions)
+        if walls.walls_visible:
+            draw_walls(walls.wall_positions)
 
         for boid in boids:
             boid.update(boids)
