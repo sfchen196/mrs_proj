@@ -97,3 +97,7 @@ where $\mathcal{W}$ is the set of wall boundary points, $k$ is a constant scalin
 6. Use the sliders to adjust flocking behaviors.
 
 Enjoy exploring this simulation and experiment with the configurations to observe emergent flocking patterns!
+
+## References:
+[1] Reynolds, C.W., 1987, August. Flocks, herds and schools: A distributed behavioral model. In Proceedings of the 14th annual conference on Computer graphics and interactive techniques (pp. 25-34).
+[2] Reynolds, C.W., 1999, March. Steering behaviors for autonomous characters. In Game developers conference (Vol. 1999, pp. 763-782).
