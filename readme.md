@@ -10,9 +10,9 @@ Flocking behavior is typically broken down into three basic steering rules, ofte
 
 Mathematically, let each boid have position $\mathbf{x}_i$ and velocity $\mathbf{v}_i$. If $\mathcal{N}(i)$ is the set of neighbors of boid $i$, then we often define:
 
-\[
+$$
 \mathbf{v}_\text{align}(i) = \frac{1}{|\mathcal{N}(i)|} \sum_{j \in \mathcal{N}(i)} \mathbf{v}_j
-\]
+$$
 
 
 $$
