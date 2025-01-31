@@ -2,7 +2,7 @@
 This repository demonstrates a basic *Boids* flocking simulation, showing how individual agents (boids) exhibit collective behavior based on local interaction rules. The simulation allows you to toggle between different modes: standard boids, directed boids, and collective memory boids. It also supports toggling walls on/off and includes a simple slider-based interface to adjust parameters like speed, alignment, cohesion, separation, neighbor radius, and separation radius.
 
 ## Core Concepts
-Flocking behavior is typically broken down into three basic steering rules, often referred to collectively as "separation, alignment, and cohesion"[1][2]:
+Flocking behavior is typically broken down into three basic steering rules, often referred to collectively as "separation, alignment, and cohesion:
 
 1. **Separation:** Steer to avoid crowding neighbors.
 2. **Alignment:** Steer towards the average heading of neighbors.
