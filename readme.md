@@ -68,6 +68,39 @@ where $\mathbf{v}_\text{goal}(i)$ is the velocity component steering toward the 
 - Contains visualization helpers to create boids, render text to the screen, and draw wall rectangles when enabled.  
 - The `create_boids` function centralizes boid creation for the different modes, returning either normal boids, directed boids, or collective memory boids depending on chosen simulation type.
 
+## Configuration Files
+
+**config.py**
+This file contains key simulation parameters that can be modified:
+
+- Screen dimensions (WIDTH, HEIGHT): Adjust for different window sizes
+- NUM_BOIDS: Change the total number of simulated boids
+- MAX_SPEED: Set the maximum velocity limit
+- NEIGHBOR_RADIUS: Define the perception range for flocking
+- SEPARATION_RADIUS: Set the minimum distance between boids
+- Weight parameters: Fine-tune ALIGNMENT_WEIGHT, COHESION_WEIGHT, and SEPARATION_WEIGHT
+
+**walls.py**
+Defines obstacle configurations using pygame.Rect objects. The file includes:
+
+- Border walls around the screen edges
+- Various shapes (plus sign, inverted T, I shape, L shape, H shape)
+- A walls_visible flag to toggle obstacle visibility
+
+Customization options:
+- Add new wall shapes using pygame.Rect(x, y, width, height)
+- Modify existing wall positions by adjusting coordinates
+- Change wall dimensions by altering the rectangle sizes
+- Create dynamic patterns by modifying the wall_positions list
+
+**sliders.py**
+Implements an interactive GUI for real-time parameter adjustment:
+
+- Slider controls for speed, alignment, cohesion, separation
+- Additional sliders for neighbor and separation radius
+- Visual feedback with different colors for each parameter
+- Labels and value display
+
 ## Adjusting Parameters
 - **Speed**: Controls the maximum velocity limit of each boid.  
 - **Alignment Weight**: Scales how strongly a boid aligns its velocity to neighbors.  
