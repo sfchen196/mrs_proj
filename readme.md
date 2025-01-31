@@ -2,11 +2,19 @@
 This repository demonstrates a basic *Boids* flocking simulation, showing how individual agents (boids) exhibit collective behavior based on local interaction rules. The simulation allows you to toggle between different modes: standard boids, directed boids, and collective memory boids. It also supports toggling walls on/off and includes a simple slider-based interface to adjust parameters like speed, alignment, cohesion, separation, neighbor radius, and separation radius.
 
 ## Core Concepts
-Flocking behavior is typically broken down into three basic steering rules, often referred to collectively as "separation, alignment, and cohesion:
+Flocking behavior is typically broken down into three basic steering rules, often referred to collectively as "separation, alignment, and cohesion"[1][2]:
 
 1. **Separation:** Steer to avoid crowding neighbors.
+
+The separation vector is calculated as a sum of normalized vectors pointing away from each neighbor, weighted inversely by distance. This creates a stronger repulsion from closer neighbors and weaker from distant ones. The negative sign ensures the force pushes away from neighbors rather than toward them.
+
 2. **Alignment:** Steer towards the average heading of neighbors.
+
+The alignment vector represents velocity matching, computed as the mean velocity of all neighbors. This average naturally dampens erratic movements since extreme velocities get averaged out with more moderate ones. The resulting vector provides a target velocity that the boid should gradually steer toward.
+
 3. **Cohesion:** Steer to move toward the average position of neighbors.
+
+The cohesion vector is calculated by first finding the center of mass (average position) of all neighbors, then creating a vector from the current boid's position to this center. This difference vector naturally points toward the group's center with a magnitude proportional to how far the boid is from the group.
 
 Mathematically, let each boid have position $\mathbf{x}_i$ and velocity $\mathbf{v}_i$. If $\mathcal{N}(i)$ is the set of neighbors of boid $i$, then we often define:
 
@@ -26,6 +34,9 @@ $$
 
 
 In practice, these vectors are scaled by configurable weights and combined to update the boid’s velocity.
+
+
+The alignment vector $\mathbf{v}\text{align}(i)$ represents the average velocity of neighboring boids, effectively matching speed and direction with the group. The cohesion vector $\mathbf{v}\text{cohesion}(i)$ points from the current boid's position to the center of mass of its neighbors, creating a tendency to stay with the group. The separation vector $\mathbf{v}_\text{separation}(i)$ creates a repulsive force that grows stronger as boids get closer, with the inverse distance relationship ensuring nearby neighbors have a stronger influence than distant ones.
 
 ## Code Structure
 
