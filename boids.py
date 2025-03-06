@@ -24,19 +24,22 @@ class Boid:
         self.velocity += acceleration
         self.velocity = limit_speed(self.velocity)
         self.position += self.velocity
-        self.bounce(boids)
-
-    def bounce(self, boids):
-        # If walls are visible, remove the boid if it collides with any wall
+        
+        # Remove wall touching boids
         if walls.walls_visible:
             if self.is_touching_wall(self.wall_positions):
                 boids.remove(self)
-        # Otherwise, bounce off screen edges
-        else:
-            if self.position[0] <= 0 or self.position[0] >= config.WIDTH:
-                self.velocity[0] *= -1
-            if self.position[1] <= 0 or self.position[1] >= config.HEIGHT:
-                self.velocity[1] *= -1
+
+        # Toroidal wrap-around logic
+        if self.position[0] < 0:
+            self.position[0] = config.WIDTH
+        elif self.position[0] > config.WIDTH:
+            self.position[0] = 0
+            
+        if self.position[1] < 0:
+            self.position[1] = config.HEIGHT
+        elif self.position[1] > config.HEIGHT:
+            self.position[1] = 0        
 
     def is_touching_wall(self, wall_positions):
         for wall in wall_positions:
