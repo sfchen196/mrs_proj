@@ -16,6 +16,12 @@ CUBE_SIZE = 8.0
 ALIGNMENT_WEIGHT = 0.100
 COHESION_WEIGHT = 0.010
 SEPARATION_WEIGHT = 0.010
+PURSUIT_WEIGHT = 0.05
+EVASION_WEIGHT = 0.1
+
+# Leader/Evade parameters
+LEADER_SPEED = 0.02
+EVADE_SPEED = 0.015
 
 class Slider:
     def __init__(self, x, y, width, height, min_val, max_val, initial_val, label, color):
@@ -69,8 +75,8 @@ class Boid:
         self.velocity = direction / np.linalg.norm(direction) * MAX_SPEED
         self.color = (1, 1, 0)  # Yellow color for regular boids
 
-    def update(self, boids, leader=None):
-        acceleration = self.flock(boids, leader)
+    def update(self, boids, leader=None, evade=None):
+        acceleration = self.flock(boids, leader, evade)
         self.velocity += acceleration
         self.velocity = self.limit_speed(self.velocity)
         self.position += self.velocity
@@ -89,12 +95,13 @@ class Boid:
             elif self.position[i] < -CUBE_SIZE / 2:
                 self.position[i] += CUBE_SIZE
 
-    def flock(self, boids, leader):
+    def flock(self, boids, leader, evade):
         alignment = np.zeros(3)
         cohesion = np.zeros(3)
         separation = np.zeros(3)
         total = 0
 
+        # Regular boid interactions
         for other in boids:
             if other == self:
                 continue
@@ -108,6 +115,22 @@ class Boid:
             if distance < SEPARATION_RADIUS and distance > 0:
                 separation -= (other.position - self.position) / distance
 
+        # Leader interaction
+        leader_influence = np.zeros(3)
+        if leader and leader.active:
+            leader_offset = leader.position - self.position
+            distance_to_leader = np.linalg.norm(leader_offset)
+            if distance_to_leader < NEIGHBOR_RADIUS:
+                leader_influence = leader_offset / distance_to_leader * PURSUIT_WEIGHT
+
+        # Evade interaction
+        evade_influence = np.zeros(3)
+        if evade and evade.active:
+            evade_offset = evade.position - self.position
+            distance_to_evade = np.linalg.norm(evade_offset)
+            if distance_to_evade < NEIGHBOR_RADIUS * 1.5:
+                evade_influence = -evade_offset / distance_to_evade * EVASION_WEIGHT
+
         if total > 0:
             alignment /= total
             alignment *= ALIGNMENT_WEIGHT
@@ -118,30 +141,24 @@ class Boid:
 
         separation *= SEPARATION_WEIGHT
 
-        leader_influence = np.zeros(3)
-        if leader:
-            leader_offset = leader.position - self.position
-            distance_to_leader = np.linalg.norm(leader_offset)
-            if distance_to_leader < NEIGHBOR_RADIUS:
-                leader_influence = leader_offset / distance_to_leader * 0.1  # Adjust the 0.1 factor to change leader influence
-
-        return alignment + cohesion + separation + leader_influence
+        return alignment + cohesion + separation + leader_influence + evade_influence
 
 class LeaderBoid(Boid):
     def __init__(self):
         super().__init__()
-        self.color = (1, 0, 0)  # Red color for leader boid
+        self.color = (0.0, 1.0, 0.0)  # Green color
         self.path_type = "torus"
         self.t = 0
         self.trajectory = []
-        self.trajectory_max_length = 300  # 5 seconds at 60 FPS
+        self.trajectory_max_length = 300
         self.straight_start = np.array([-CUBE_SIZE/2, -CUBE_SIZE/2, -CUBE_SIZE/2])
         self.straight_end = np.array([CUBE_SIZE/2, CUBE_SIZE/2, CUBE_SIZE/2])
         self.straight_direction = self.straight_end - self.straight_start
         self.straight_direction /= np.linalg.norm(self.straight_direction)
+        self.active = True
 
     def update(self):
-        self.t += MAX_SPEED
+        self.t += LEADER_SPEED
         if self.path_type == "torus":
             self.position = np.array([
                 np.sin(self.t) * CUBE_SIZE / 3,
@@ -149,7 +166,7 @@ class LeaderBoid(Boid):
                 np.sin(2 * self.t) * CUBE_SIZE / 3
             ])
         elif self.path_type == "straight":
-            self.position += self.straight_direction * MAX_SPEED
+            self.position += self.straight_direction * LEADER_SPEED
             if np.any(self.position > CUBE_SIZE/2) or np.any(self.position < -CUBE_SIZE/2):
                 self.position = self.straight_start.copy()
 
@@ -162,9 +179,41 @@ class LeaderBoid(Boid):
 
     def toggle_path(self):
         self.path_type = "straight" if self.path_type == "torus" else "torus"
-        self.t = 0  # Reset the time parameter when switching paths
+        self.t = 0
         if self.path_type == "straight":
             self.position = self.straight_start.copy()
+
+class EvadeBoid(Boid):
+    def __init__(self):
+        super().__init__()
+        self.color = (1.0, 0, 0.0)  # Red color
+        self.path_type = "center"
+        self.t = 0
+        self.trajectory = []
+        self.trajectory_max_length = 300
+        self.active = True
+
+    def update(self):
+        self.t += EVADE_SPEED
+        if self.path_type == "center":
+            self.position = np.array([0.0, 0.0, 0.0])
+        elif self.path_type == "torus":
+            self.position = np.array([
+                np.sin(self.t) * CUBE_SIZE / 2,
+                np.cos(self.t) * CUBE_SIZE / 2,
+                np.sin(2 * self.t) * CUBE_SIZE / 2
+            ])
+
+        self.velocity = self.position - self.trajectory[-1] if self.trajectory else np.zeros(3)
+        self.velocity = self.limit_speed(self.velocity)
+        
+        self.trajectory.append(self.position.copy())
+        if len(self.trajectory) > self.trajectory_max_length:
+            self.trajectory.pop(0)
+
+    def toggle_path(self):
+        self.path_type = "torus" if self.path_type == "center" else "center"
+        self.t = 0
 
 def draw_boid(boid):
     sphere = gluNewQuadric()
@@ -181,13 +230,13 @@ def draw_cube():
 
     vertices = [
         [-CUBE_SIZE/2, -CUBE_SIZE/2, -CUBE_SIZE/2],
-        [ CUBE_SIZE/2, -CUBE_SIZE/2, -CUBE_SIZE/2],
-        [ CUBE_SIZE/2,  CUBE_SIZE/2, -CUBE_SIZE/2],
-        [-CUBE_SIZE/2,  CUBE_SIZE/2, -CUBE_SIZE/2],
-        [-CUBE_SIZE/2, -CUBE_SIZE/2,  CUBE_SIZE/2],
-        [ CUBE_SIZE/2, -CUBE_SIZE/2,  CUBE_SIZE/2],
-        [ CUBE_SIZE/2,  CUBE_SIZE/2,  CUBE_SIZE/2],
-        [-CUBE_SIZE/2,  CUBE_SIZE/2,  CUBE_SIZE/2]
+        [CUBE_SIZE/2, -CUBE_SIZE/2, -CUBE_SIZE/2],
+        [CUBE_SIZE/2, CUBE_SIZE/2, -CUBE_SIZE/2],
+        [-CUBE_SIZE/2, CUBE_SIZE/2, -CUBE_SIZE/2],
+        [-CUBE_SIZE/2, -CUBE_SIZE/2, CUBE_SIZE/2],
+        [CUBE_SIZE/2, -CUBE_SIZE/2, CUBE_SIZE/2],
+        [CUBE_SIZE/2, CUBE_SIZE/2, CUBE_SIZE/2],
+        [-CUBE_SIZE/2, CUBE_SIZE/2, CUBE_SIZE/2]
     ]
     edges = [
         (0,1), (1,2), (2,3), (3,0),
@@ -239,11 +288,11 @@ def draw_cube():
         glVertex3f(CUBE_SIZE/2, pos, CUBE_SIZE/2)
         glEnd()
 
-def draw_leader_trajectory(leader):
-    glColor3f(1.0, 0.0, 0.0)  # Red color for trajectory
+def draw_trajectory(trajectory, color):
+    glColor3f(*color)
     glBegin(GL_POINTS)
-    for i, pos in enumerate(leader.trajectory):
-        if i % 2 == 0:  # Draw every other point to create a dotted line effect
+    for i, pos in enumerate(trajectory):
+        if i % 2 == 0:
             glVertex3fv(pos)
     glEnd()
 
@@ -272,12 +321,13 @@ class Button:
 
 def main():
     global MAX_SPEED, ALIGNMENT_WEIGHT, COHESION_WEIGHT, SEPARATION_WEIGHT, NEIGHBOR_RADIUS, SEPARATION_RADIUS
+    global PURSUIT_WEIGHT, EVASION_WEIGHT, LEADER_SPEED, EVADE_SPEED
     
     pygame.init()
     display_width, display_height = 1080, 720
     display = (display_width, display_height)
     screen = pygame.display.set_mode(display, DOUBLEBUF|OPENGL)
-    pygame.display.set_caption("3D Boids Simulation with Leader")
+    pygame.display.set_caption("3D Boids Simulation with Leader & Evade")
 
     ui_surface = pygame.Surface(display, pygame.SRCALPHA)
     
@@ -287,29 +337,39 @@ def main():
     slider_x = display_width - slider_width - 20
     
     sliders = [
-        Slider(slider_x, display_height - slider_spacing * 6, slider_width, slider_height, 
+        Slider(slider_x, display_height - slider_spacing * 9, slider_width, slider_height, 
                0.001, 0.05, MAX_SPEED, "Max Speed", (255, 165, 0)),
-        Slider(slider_x, display_height - slider_spacing * 5, slider_width, slider_height, 
+        Slider(slider_x, display_height - slider_spacing * 8, slider_width, slider_height, 
                0.001, 0.2, ALIGNMENT_WEIGHT, "Alignment", (255, 0, 0)),
-        Slider(slider_x, display_height - slider_spacing * 4, slider_width, slider_height, 
+        Slider(slider_x, display_height - slider_spacing * 7, slider_width, slider_height, 
                0.001, 0.1, COHESION_WEIGHT, "Cohesion", (0, 255, 0)),
-        Slider(slider_x, display_height - slider_spacing * 3, slider_width, slider_height, 
+        Slider(slider_x, display_height - slider_spacing * 6, slider_width, slider_height, 
                0.001, 0.2, SEPARATION_WEIGHT, "Separation", (0, 0, 255)),
+        Slider(slider_x, display_height - slider_spacing * 5, slider_width, slider_height, 
+               0.0, 0.3, PURSUIT_WEIGHT, "Pursuit", (255, 192, 203)),
+        Slider(slider_x, display_height - slider_spacing * 4, slider_width, slider_height, 
+               0.0, 0.3, EVASION_WEIGHT, "Evasion", (147, 112, 219)),
+        Slider(slider_x, display_height - slider_spacing * 3, slider_width, slider_height, 
+               0.001, 0.05, LEADER_SPEED, "Leader Speed", (255, 0, 0)),
         Slider(slider_x, display_height - slider_spacing * 2, slider_width, slider_height, 
-               0.1, 3.0, NEIGHBOR_RADIUS, "Neighbor Radius", (255, 192, 203)),
+               0.001, 0.05, EVADE_SPEED, "Evade Speed", (147, 112, 219)),
         Slider(slider_x, display_height - slider_spacing * 1, slider_width, slider_height, 
-               0.1, 2.0, SEPARATION_RADIUS, "Separation Radius", (147, 112, 219))
+               0.1, 3.0, NEIGHBOR_RADIUS, "Neighbor Radius", (255, 192, 203)),
     ]
 
     leader_button = Button(10, 10, 120, 30, "Leader: ON", (0, 255, 0), (0, 0, 0), (255, 0, 0))
-    path_button = Button(140, 10, 120, 30, "Path: O", (255, 165, 0), (0, 0, 0), (255, 165, 0))
+    leader_path_button = Button(140, 10, 120, 30, "Path: O", (255, 165, 0), (0, 0, 0), (255, 165, 0))
+    evade_button = Button(270, 10, 140, 30, "Evade: ON", (0, 255, 0), (0, 0, 0), (255, 0, 0))
+    evade_path_button = Button(420, 10, 120, 30, "Path: .", (255, 165, 0), (0, 0, 0), (255, 165, 0))
 
     gluPerspective(45, display[0]/display[1], 0.1, 50.0)
     glTranslatef(0.0, 0.0, -15)
 
     boids = [Boid() for _ in range(NUM_BOIDS)]
     leader = LeaderBoid()
+    evade = EvadeBoid()
     leader_active = True
+    evade_active = True
 
     mouse_pressed = False
     last_mouse_pos = None
@@ -335,8 +395,11 @@ def main():
                     ALIGNMENT_WEIGHT = sliders[1].value
                     COHESION_WEIGHT = sliders[2].value
                     SEPARATION_WEIGHT = sliders[3].value
-                    NEIGHBOR_RADIUS = sliders[4].value
-                    SEPARATION_RADIUS = sliders[5].value
+                    PURSUIT_WEIGHT = sliders[4].value
+                    EVASION_WEIGHT = sliders[5].value
+                    LEADER_SPEED = sliders[6].value
+                    EVADE_SPEED = sliders[7].value
+                    NEIGHBOR_RADIUS = sliders[8].value
                     
             if event.type == pygame.MOUSEBUTTONUP:
                 dragging_slider = False
@@ -344,11 +407,21 @@ def main():
             if leader_button.handle_event(event):
                 leader_active = not leader_active
                 leader_button.text = "Leader: ON" if leader_active else "Leader: OFF"
+                leader.active = leader_active
                 
-            if path_button.handle_event(event):
+            if leader_path_button.handle_event(event):
                 leader.toggle_path()
-                path_button.text = "Path: |" if leader.path_type == "straight" else "Path: O"
+                leader_path_button.text = "Path: |" if leader.path_type == "straight" else "Path: O"
                 
+            if evade_button.handle_event(event):
+                evade_active = not evade_active
+                evade_button.text = "Evade: ON" if evade_active else "Evade: OFF"
+                evade.active = evade_active
+
+            if evade_path_button.handle_event(event):
+                evade.toggle_path()
+                evade_path_button.text = "Path: O" if evade.path_type == "torus" else "Path: ."
+
             if not dragging_slider:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mouse_pressed = True
@@ -374,18 +447,25 @@ def main():
         if leader_active:
             leader.update()
             draw_boid(leader)
-            draw_leader_trajectory(leader)
+            draw_trajectory(leader.trajectory, (0.0, 1.0, 0.0)) # Green
+
+        if evade_active:
+            evade.update()
+            draw_boid(evade)
+            draw_trajectory(evade.trajectory, (1.0, 0.0, 0.0)) # Red
 
         for boid in boids:
-            boid.update(boids, leader if leader_active else None)
+            boid.update(boids, leader if leader_active else None, evade if evade_active else None)
             draw_boid(boid)
 
         for slider in sliders:
             slider.draw(ui_surface)
             
         leader_button.draw(ui_surface)
-        path_button.draw(ui_surface)
-        
+        leader_path_button.draw(ui_surface)
+        evade_button.draw(ui_surface)
+        evade_path_button.draw(ui_surface)
+
         ui_surface.blit(help_text, (10, 50))
         
         glDisable(GL_DEPTH_TEST)
