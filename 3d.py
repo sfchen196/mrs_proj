@@ -4,11 +4,6 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 import numpy as np
 import random
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Input
-from tensorflow.keras.optimizers import Adam
-from collections import deque
 
 # Simulation parameters
 NUM_BOIDS = 50
@@ -22,80 +17,128 @@ ALIGNMENT_WEIGHT = 0.05
 COHESION_WEIGHT = 0.005
 SEPARATION_WEIGHT = 0.05
 
+class Slider:
+    def __init__(self, x, y, width, height, min_val, max_val, initial_val, label, color):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.min_val = min_val
+        self.max_val = max_val
+        self.value = initial_val
+        self.label = label
+        self.color = color
+        self.handle_width = 10
+        self.handle_height = 20
+        self.dragging = False
+        
+    def draw(self, surface):
+        # Draw slider background
+        slider_surface = pygame.Surface((self.rect.width, self.rect.height))
+        slider_surface.fill((255, 255, 255))
+        slider_surface.set_alpha(128)
+        surface.blit(slider_surface, (self.rect.x, self.rect.y))
+        
+        # Draw slider handle
+        handle_x = self.rect.x + ((self.value - self.min_val) / (self.max_val - self.min_val)) * self.rect.width
+        pygame.draw.rect(surface, self.color, (handle_x - self.handle_width//2, self.rect.y - 5, 
+                                               self.handle_width, self.handle_height))
+        
+        # Draw label
+        font = pygame.font.SysFont(None, 24)
+        label_text = font.render(f"{self.label}: {self.value:.3f}", True, (255, 255, 255))
+        surface.blit(label_text, (self.rect.x, self.rect.y - 25))
+        
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            handle_x = self.rect.x + ((self.value - self.min_val) / (self.max_val - self.min_val)) * self.rect.width
+            handle_rect = pygame.Rect(handle_x - self.handle_width//2, self.rect.y - 5, 
+                                     self.handle_width, self.handle_height)
+            if handle_rect.collidepoint(event.pos) or self.rect.collidepoint(event.pos):
+                self.dragging = True
+                
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.dragging = False
+            
+        elif event.type == pygame.MOUSEMOTION and self.dragging:
+            # Calculate new value based on mouse position
+            pos_ratio = (event.pos[0] - self.rect.x) / self.rect.width
+            pos_ratio = max(0, min(1, pos_ratio))  # Clamp between 0 and 1
+            self.value = self.min_val + pos_ratio * (self.max_val - self.min_val)
+            return True  # Value changed
+            
+        return False  # Value unchanged
+
 class Boid:
     def __init__(self):
         self.position = np.random.uniform(-CUBE_SIZE/2, CUBE_SIZE/2, 3)
         direction = np.random.randn(3)
         self.velocity = direction / np.linalg.norm(direction) * MAX_SPEED
 
-    def update(self, boids, Aro=5, Ara=10):
-        r_r = 1
-        r_o = r_r + Aro
-        r_a = r_o + Ara
-        
-        repulsion = np.zeros(3)
-        orientation = np.zeros(3)
-        attraction = np.zeros(3)
-        
-        n_r = n_o = n_a = 0
-        
+    def update(self, boids):
+        acceleration = self.flock(boids)
+        self.velocity += acceleration
+        self.velocity = self.limit_speed(self.velocity)
+        self.position += self.velocity
+        self.wrap_position()
+
+    def limit_speed(self, vector):
+        speed = np.linalg.norm(vector)
+        if speed > MAX_SPEED:
+            return (vector / speed) * MAX_SPEED
+        return vector
+
+    def wrap_position(self):
+        for i in range(3):
+            if self.position[i] > CUBE_SIZE / 2:
+                self.position[i] -= CUBE_SIZE
+            elif self.position[i] < -CUBE_SIZE / 2:
+                self.position[i] += CUBE_SIZE
+
+    def flock(self, boids):
+        alignment = np.zeros(3)
+        cohesion = np.zeros(3)
+        separation = np.zeros(3)
+        total = 0
+
         for other in boids:
             if other == self:
                 continue
-                
             distance = np.linalg.norm(other.position - self.position)
-            
-            if distance < r_r:
-                repulsion -= (other.position - self.position) / (distance + 1e-8)
-                n_r += 1
-            elif distance < r_o:
-                orientation += other.velocity
-                n_o += 1
-            elif distance < r_a:
-                attraction += (other.position - self.position)
-                n_a += 1
-        
-        acceleration = np.zeros(3)
-        
-        if n_r > 0:
-            repulsion = repulsion / n_r
-            acceleration = repulsion
-        else:
-            if n_o > 0:
-                orientation = orientation / n_o
-                acceleration += orientation * ALIGNMENT_WEIGHT
-            
-            if n_a > 0:
-                attraction = attraction / n_a
-                acceleration += attraction * COHESION_WEIGHT
-        
-        self.velocity += acceleration
-        
-        speed = np.linalg.norm(self.velocity)
-        if speed > MAX_SPEED:
-            self.velocity = (self.velocity / speed) * MAX_SPEED
-            
-        self.position += self.velocity
-        
-        for i in range(3):
-            if self.position[i] > CUBE_SIZE/2:
-                self.position[i] -= CUBE_SIZE
-            elif self.position[i] < -CUBE_SIZE/2:
-                self.position[i] += CUBE_SIZE
+
+            if distance < NEIGHBOR_RADIUS:
+                alignment += other.velocity
+                cohesion += other.position
+                total += 1
+
+            if distance < SEPARATION_RADIUS and distance > 0:
+                separation -= (other.position - self.position) / distance
+
+        if total > 0:
+            alignment /= total
+            alignment *= ALIGNMENT_WEIGHT
+
+            cohesion /= total
+            cohesion -= self.position
+            cohesion *= COHESION_WEIGHT
+
+        separation *= SEPARATION_WEIGHT
+
+        return alignment + cohesion + separation
+
 
 def draw_boid(boid):
     sphere = gluNewQuadric()
     glPushMatrix()
     glTranslatef(*boid.position)
-    glColor3f(1, 1, 0)
-    gluSphere(sphere, 0.1, 10, 10)
+    glColor3f(1, 1, 0)  # Yellow color for boids
+    gluSphere(sphere, 0.1, 10, 10)  # Render as small spheres
     glPopMatrix()
 
+
 def draw_cube():
-    glColor4f(1.0, 1.0, 1.0, 0.5)
+    glColor4f(1.0, 1.0, 1.0, 0.5)  # Translucent white color for the cube edges
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
+    # Draw cube edges
     vertices = [
         [-CUBE_SIZE/2, -CUBE_SIZE/2, -CUBE_SIZE/2],
         [ CUBE_SIZE/2, -CUBE_SIZE/2, -CUBE_SIZE/2],
@@ -118,227 +161,184 @@ def draw_cube():
             glVertex3fv(vertices[vertex])
     glEnd()
 
-    glColor4f(0.8, 0.8, 0.8, 0.3)
+    # Draw grid on the cube faces for better perspective visualization
+    glColor4f(0.8, 0.8, 0.8, 0.3)  # Light gray grid lines
     step = CUBE_SIZE / 10.0
 
     for i in range(-5, 6):
         pos = i * step
         
         glBegin(GL_LINES)
+        # Grid lines on bottom face (XZ plane, Y = -CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, -CUBE_SIZE/2, pos)
         glVertex3f(CUBE_SIZE/2, -CUBE_SIZE/2, pos)
         glVertex3f(pos, -CUBE_SIZE/2, -CUBE_SIZE/2)
         glVertex3f(pos, -CUBE_SIZE/2, CUBE_SIZE/2)
         
+        # Grid lines on top face (XZ plane, Y = CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, CUBE_SIZE/2, pos)
         glVertex3f(CUBE_SIZE/2, CUBE_SIZE/2, pos)
         glVertex3f(pos, CUBE_SIZE/2, -CUBE_SIZE/2)
         glVertex3f(pos, CUBE_SIZE/2, CUBE_SIZE/2)
         
+        # Grid lines on back face (XY plane, Z = -CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, pos, -CUBE_SIZE/2)
         glVertex3f(CUBE_SIZE/2, pos, -CUBE_SIZE/2)
         glVertex3f(pos, -CUBE_SIZE/2, -CUBE_SIZE/2)
         glVertex3f(pos, CUBE_SIZE/2, -CUBE_SIZE/2)
         
+        # Grid lines on front face (XY plane, Z = CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, pos, CUBE_SIZE/2)
         glVertex3f(CUBE_SIZE/2, pos, CUBE_SIZE/2)
         glVertex3f(pos, -CUBE_SIZE/2, CUBE_SIZE/2)
         glVertex3f(pos, CUBE_SIZE/2, CUBE_SIZE/2)
         
+        # Grid lines on left face (YZ plane, X = -CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, -CUBE_SIZE/2, pos)
         glVertex3f(-CUBE_SIZE/2, CUBE_SIZE/2, pos)
         glVertex3f(-CUBE_SIZE/2, pos, -CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, pos, CUBE_SIZE/2)
         
+        # Grid lines on right face (YZ plane, X = CUBE_SIZE/2)
         glVertex3f(CUBE_SIZE/2, -CUBE_SIZE/2, pos)
         glVertex3f(CUBE_SIZE/2, CUBE_SIZE/2, pos)
         glVertex3f(CUBE_SIZE/2, pos, -CUBE_SIZE/2)
         glVertex3f(CUBE_SIZE/2, pos, CUBE_SIZE/2)
         glEnd()
 
-class BoidsParameterAgent:
-    def __init__(self, state_size, action_size):
-        self.state_size = state_size
-        self.action_size = action_size
-        self.memory = deque(maxlen=2000)
-        self.gamma = 0.95
-        self.epsilon = 1.0
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
-        self.learning_rate = 0.001
-        self.model = self._build_model()
-        
-    def _build_model(self):
-        model = Sequential()
-        model.add(Input(shape=(self.state_size,)))
-        model.add(Dense(24, activation='relu'))
-        model.add(Dense(24, activation='relu'))
-        model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss='mse', optimizer=Adam(learning_rate=self.learning_rate))
-        return model
-    
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
-    
-    def act(self, state):
-        if np.random.rand() <= self.epsilon:
-            return np.array([
-                random.uniform(0, 15),
-                random.uniform(0, 15)
-            ])
-        
-        act_values = self.model.predict(state, verbose=0)
-        return act_values[0]
-    
-    def replay(self, batch_size):
-        minibatch = random.sample(self.memory, batch_size)
-        for state, action, reward, next_state, done in minibatch:
-            target = reward
-            if not done:
-                target = (reward + self.gamma * 
-                          np.amax(self.model.predict(next_state, verbose=0)[0]))
-            target_f = self.model.predict(state, verbose=0)
-            target_f[0] = target
-            self.model.fit(state, target_f, epochs=1, verbose=0)
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
 
-def get_state(boids):
-    positions = np.array([boid.position for boid in boids])
-    velocities = np.array([boid.velocity for boid in boids])
-    
-    avg_direction = np.mean(velocities, axis=0)
-    polarization = np.linalg.norm(avg_direction) / (np.mean(np.linalg.norm(velocities, axis=1)) + 1e-8)
-    
-    center = np.mean(positions, axis=0)
-    rel_positions = positions - center
-    cross_products = np.cross(rel_positions, velocities)
-    angular_momentum = np.linalg.norm(np.mean(cross_products, axis=0))
-    
-    distances = []
-    for i in range(len(boids)):
-        for j in range(i+1, len(boids)):
-            distances.append(np.linalg.norm(positions[i] - positions[j]))
-    avg_distance = np.mean(distances) if distances else 0
-    
-    position_variance = np.mean(np.var(positions, axis=0))
-    
-    return np.array([[polarization, angular_momentum, avg_distance, position_variance]])
-
-def calculate_reward(state, target_behavior):
-    polarization = state[0][0]
-    angular_momentum = state[0][1]
-    avg_distance = state[0][2]
-    position_variance = state[0][3]
-    
-    if target_behavior == "swarm":
-        reward = (1 - polarization) * 0.5 + (1 - angular_momentum) * 0.5
-    elif target_behavior == "torus":
-        reward = (1 - polarization) * 0.5 + angular_momentum * 0.5
-    elif target_behavior == "dynamic_parallel":
-        reward = polarization * 0.6 + (1 - angular_momentum) * 0.3 + (position_variance / 10) * 0.1
-    elif target_behavior == "highly_parallel":
-        reward = polarization * 0.7 + (1 - angular_momentum) * 0.2 + (1 - position_variance / 5) * 0.1
-    
-    return reward
-
-def train_boids_parameters(target_behavior, episodes=1000):
-    state_size = 4
-    action_size = 2
-    agent = BoidsParameterAgent(state_size, action_size)
-    
-    batch_size = 32
-    best_reward = -float('inf')
-    best_params = None
-    
-    for e in range(episodes):
-        initial_params = agent.act(np.zeros((1, state_size)))
-        Aro, Ara = initial_params
-        
-        boids = [Boid() for _ in range(NUM_BOIDS)]
-        
-        for _ in range(500):
-            for boid in boids:
-                boid.update(boids, Aro=Aro, Ara=Ara)
-        
-        state = get_state(boids)
-        
-        total_reward = 0
-        for _ in range(100):
-            for boid in boids:
-                boid.update(boids, Aro=Aro, Ara=Ara)
-            
-            next_state = get_state(boids)
-            reward = calculate_reward(next_state, target_behavior)
-            total_reward += reward
-            
-            agent.remember(state, initial_params, reward, next_state, False)
-            state = next_state
-        
-        agent.remember(state, initial_params, total_reward, state, True)
-        
-        if len(agent.memory) > batch_size:
-            agent.replay(batch_size)
-        
-        if total_reward > best_reward:
-            best_reward = total_reward
-            best_params = (Aro, Ara)
-        
-        print(f"Episode: {e+1}/{episodes}, Reward: {total_reward}, Best Params: {best_params}")
-    
-    return best_params
-
-def visualize_learned_behavior(params, behavior_name):
-    Aro, Ara = params
-    
-    boids = [Boid() for _ in range(NUM_BOIDS)]
-    
-    for _ in range(500):
-        for boid in boids:
-            boid.update(boids, Aro=Aro, Ara=Ara)
+def main():
+    global MAX_SPEED, ALIGNMENT_WEIGHT, COHESION_WEIGHT, SEPARATION_WEIGHT, NEIGHBOR_RADIUS, SEPARATION_RADIUS
     
     pygame.init()
-    display = (1080, 720)
-    pygame.display.set_mode(display, pygame.DOUBLEBUF|pygame.OPENGL)
-    pygame.display.set_caption(f"Learned {behavior_name} Behavior")
+    display_width, display_height = 1080, 720
+    display = (display_width, display_height)
+    screen = pygame.display.set_mode(display, DOUBLEBUF|OPENGL)
+    pygame.display.set_caption("3D Boids Simulation")
+
+    # Create an overlay surface for UI elements
+    ui_surface = pygame.Surface(display, pygame.SRCALPHA)
     
+    # Create sliders
+    slider_width = 200
+    slider_height = 10
+    slider_spacing = 40
+    slider_x = display_width - slider_width - 20
+    
+    sliders = [
+        Slider(slider_x, display_height - slider_spacing * 6, slider_width, slider_height, 
+               0.001, 0.05, MAX_SPEED, "Max Speed", (255, 165, 0)),
+        Slider(slider_x, display_height - slider_spacing * 5, slider_width, slider_height, 
+               0.001, 0.2, ALIGNMENT_WEIGHT, "Alignment", (255, 0, 0)),
+        Slider(slider_x, display_height - slider_spacing * 4, slider_width, slider_height, 
+               0.001, 0.1, COHESION_WEIGHT, "Cohesion", (0, 255, 0)),
+        Slider(slider_x, display_height - slider_spacing * 3, slider_width, slider_height, 
+               0.001, 0.2, SEPARATION_WEIGHT, "Separation", (0, 0, 255)),
+        Slider(slider_x, display_height - slider_spacing * 2, slider_width, slider_height, 
+               0.1, 3.0, NEIGHBOR_RADIUS, "Neighbor Radius", (255, 192, 203)),
+        Slider(slider_x, display_height - slider_spacing * 1, slider_width, slider_height, 
+               0.1, 2.0, SEPARATION_RADIUS, "Separation Radius", (147, 112, 219))
+    ]
+
     gluPerspective(45, display[0]/display[1], 0.1, 50.0)
     glTranslatef(0.0, 0.0, -15)
-    
+
+    boids = [Boid() for _ in range(NUM_BOIDS)]
+
+    mouse_pressed = False
+    last_mouse_pos = None
+    dragging_slider = False
+
     clock = pygame.time.Clock()
-    
+    font = pygame.font.SysFont(None, 24)
+    help_text = font.render("Drag mouse to rotate view | Adjust sliders to change parameters", True, (255, 255, 255))
+
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
-                return
-        
+                quit()
+                
+            # Handle slider events first
+            slider_changed = False
+            for slider in sliders:
+                if slider.handle_event(event):
+                    slider_changed = True
+                    dragging_slider = True
+                    
+                    # Update global parameters based on slider values
+                    MAX_SPEED = sliders[0].value
+                    ALIGNMENT_WEIGHT = sliders[1].value
+                    COHESION_WEIGHT = sliders[2].value
+                    SEPARATION_WEIGHT = sliders[3].value
+                    NEIGHBOR_RADIUS = sliders[4].value
+                    SEPARATION_RADIUS = sliders[5].value
+                    
+            if event.type == pygame.MOUSEBUTTONUP:
+                dragging_slider = False
+                
+            # Handle 3D view rotation if not dragging sliders
+            if not dragging_slider:
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    mouse_pressed = True
+                    last_mouse_pos = pygame.mouse.get_pos()
+                elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                    mouse_pressed = False
+
+        # Handle 3D rotation
+        if mouse_pressed and last_mouse_pos is not None and not dragging_slider:
+            current_mouse_pos = pygame.mouse.get_pos()
+            dx = current_mouse_pos[0] - last_mouse_pos[0]
+            dy = current_mouse_pos[1] - last_mouse_pos[1]
+            last_mouse_pos = current_mouse_pos
+
+            glRotatef(dx * 0.1, 0.0, 1.0, 0.0)   # Rotate horizontally
+            glRotatef(dy * -0.1, 1.0, 0.0, 0.0)  # Rotate vertically
+
+        # Clear both the 3D scene and UI surface
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        ui_surface.fill((0, 0, 0, 0))  # Clear UI with transparent background
         
-        for boid in boids:
-            boid.update(boids, Aro=Aro, Ara=Ara)
-            draw_boid(boid)
-        
+        # 3D rendering
+        glEnable(GL_DEPTH_TEST)
         draw_cube()
+
+        for boid in boids:
+            boid.update(boids)
+            draw_boid(boid)
+
+        # 2D UI rendering
+        for slider in sliders:
+            slider.draw(ui_surface)
+            
+        # Draw help text
+        ui_surface.blit(help_text, (10, 10))
+        
+        # Temporarily disable OpenGL to draw the UI
+        glDisable(GL_DEPTH_TEST)
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        glOrtho(0, display_width, display_height, 0, -1, 1)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+        
+        # Convert UI surface to a texture and draw it
+        ui_texture = pygame.image.tostring(ui_surface, "RGBA", True)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glDrawPixels(display_width, display_height, GL_RGBA, GL_UNSIGNED_BYTE, ui_texture)
+        
+        # Restore OpenGL state
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+        glPopMatrix()
+        glEnable(GL_DEPTH_TEST)
+
         pygame.display.flip()
         clock.tick(60)
-
-def main():
-    behaviors = ["swarm", "torus", "dynamic_parallel", "highly_parallel"]
-    learned_params = {}
-    
-    for behavior in behaviors:
-        print(f"\nTraining parameters for {behavior} behavior...")
-        params = train_boids_parameters(behavior, episodes=200)
-        learned_params[behavior] = params
-        print(f"Best parameters for {behavior}: {params}")
-    
-    import json
-    with open("learned_boid_parameters.json", "w") as f:
-        json.dump(learned_params, f)
-    
-    for behavior in behaviors:
-        visualize_learned_behavior(learned_params[behavior], behavior)
 
 if __name__ == "__main__":
     main()
