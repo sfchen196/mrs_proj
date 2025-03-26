@@ -7,15 +7,15 @@ import random
 
 # Simulation parameters
 NUM_BOIDS = 50
-MAX_SPEED = 0.01
-NEIGHBOR_RADIUS = 1.0
+MAX_SPEED = 0.02
+NEIGHBOR_RADIUS = 2.0
 SEPARATION_RADIUS = 0.5
 CUBE_SIZE = 8.0
 
 # Boid weights
-ALIGNMENT_WEIGHT = 0.05
-COHESION_WEIGHT = 0.005
-SEPARATION_WEIGHT = 0.05
+ALIGNMENT_WEIGHT = 0.100
+COHESION_WEIGHT = 0.010
+SEPARATION_WEIGHT = 0.010
 
 class Slider:
     def __init__(self, x, y, width, height, min_val, max_val, initial_val, label, color):
@@ -30,18 +30,15 @@ class Slider:
         self.dragging = False
         
     def draw(self, surface):
-        # Draw slider background
         slider_surface = pygame.Surface((self.rect.width, self.rect.height))
         slider_surface.fill((255, 255, 255))
         slider_surface.set_alpha(128)
         surface.blit(slider_surface, (self.rect.x, self.rect.y))
         
-        # Draw slider handle
         handle_x = self.rect.x + ((self.value - self.min_val) / (self.max_val - self.min_val)) * self.rect.width
         pygame.draw.rect(surface, self.color, (handle_x - self.handle_width//2, self.rect.y - 5, 
                                                self.handle_width, self.handle_height))
         
-        # Draw label
         font = pygame.font.SysFont(None, 24)
         label_text = font.render(f"{self.label}: {self.value:.3f}", True, (255, 255, 255))
         surface.blit(label_text, (self.rect.x, self.rect.y - 25))
@@ -58,22 +55,22 @@ class Slider:
             self.dragging = False
             
         elif event.type == pygame.MOUSEMOTION and self.dragging:
-            # Calculate new value based on mouse position
             pos_ratio = (event.pos[0] - self.rect.x) / self.rect.width
-            pos_ratio = max(0, min(1, pos_ratio))  # Clamp between 0 and 1
+            pos_ratio = max(0, min(1, pos_ratio))
             self.value = self.min_val + pos_ratio * (self.max_val - self.min_val)
-            return True  # Value changed
+            return True
             
-        return False  # Value unchanged
+        return False
 
 class Boid:
     def __init__(self):
         self.position = np.random.uniform(-CUBE_SIZE/2, CUBE_SIZE/2, 3)
         direction = np.random.randn(3)
         self.velocity = direction / np.linalg.norm(direction) * MAX_SPEED
+        self.color = (1, 1, 0)  # Yellow color for regular boids
 
-    def update(self, boids):
-        acceleration = self.flock(boids)
+    def update(self, boids, leader=None):
+        acceleration = self.flock(boids, leader)
         self.velocity += acceleration
         self.velocity = self.limit_speed(self.velocity)
         self.position += self.velocity
@@ -92,7 +89,7 @@ class Boid:
             elif self.position[i] < -CUBE_SIZE / 2:
                 self.position[i] += CUBE_SIZE
 
-    def flock(self, boids):
+    def flock(self, boids, leader):
         alignment = np.zeros(3)
         cohesion = np.zeros(3)
         separation = np.zeros(3)
@@ -121,24 +118,67 @@ class Boid:
 
         separation *= SEPARATION_WEIGHT
 
-        return alignment + cohesion + separation
+        leader_influence = np.zeros(3)
+        if leader:
+            leader_offset = leader.position - self.position
+            distance_to_leader = np.linalg.norm(leader_offset)
+            if distance_to_leader < NEIGHBOR_RADIUS:
+                leader_influence = leader_offset / distance_to_leader * 0.1  # Adjust the 0.1 factor to change leader influence
 
+        return alignment + cohesion + separation + leader_influence
+
+class LeaderBoid(Boid):
+    def __init__(self):
+        super().__init__()
+        self.color = (1, 0, 0)  # Red color for leader boid
+        self.path_type = "torus"
+        self.t = 0
+        self.trajectory = []
+        self.trajectory_max_length = 300  # 5 seconds at 60 FPS
+        self.straight_start = np.array([-CUBE_SIZE/2, -CUBE_SIZE/2, -CUBE_SIZE/2])
+        self.straight_end = np.array([CUBE_SIZE/2, CUBE_SIZE/2, CUBE_SIZE/2])
+        self.straight_direction = self.straight_end - self.straight_start
+        self.straight_direction /= np.linalg.norm(self.straight_direction)
+
+    def update(self):
+        self.t += MAX_SPEED
+        if self.path_type == "torus":
+            self.position = np.array([
+                np.sin(self.t) * CUBE_SIZE / 3,
+                np.cos(self.t) * CUBE_SIZE / 3,
+                np.sin(2 * self.t) * CUBE_SIZE / 3
+            ])
+        elif self.path_type == "straight":
+            self.position += self.straight_direction * MAX_SPEED
+            if np.any(self.position > CUBE_SIZE/2) or np.any(self.position < -CUBE_SIZE/2):
+                self.position = self.straight_start.copy()
+
+        self.velocity = self.position - self.trajectory[-1] if self.trajectory else np.zeros(3)
+        self.velocity = self.limit_speed(self.velocity)
+        
+        self.trajectory.append(self.position.copy())
+        if len(self.trajectory) > self.trajectory_max_length:
+            self.trajectory.pop(0)
+
+    def toggle_path(self):
+        self.path_type = "straight" if self.path_type == "torus" else "torus"
+        self.t = 0  # Reset the time parameter when switching paths
+        if self.path_type == "straight":
+            self.position = self.straight_start.copy()
 
 def draw_boid(boid):
     sphere = gluNewQuadric()
     glPushMatrix()
     glTranslatef(*boid.position)
-    glColor3f(1, 1, 0)  # Yellow color for boids
-    gluSphere(sphere, 0.1, 10, 10)  # Render as small spheres
+    glColor3f(*boid.color)
+    gluSphere(sphere, 0.1, 10, 10)
     glPopMatrix()
 
-
 def draw_cube():
-    glColor4f(1.0, 1.0, 1.0, 0.5)  # Translucent white color for the cube edges
+    glColor4f(1.0, 1.0, 1.0, 0.5)
     glEnable(GL_BLEND)
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-    # Draw cube edges
     vertices = [
         [-CUBE_SIZE/2, -CUBE_SIZE/2, -CUBE_SIZE/2],
         [ CUBE_SIZE/2, -CUBE_SIZE/2, -CUBE_SIZE/2],
@@ -161,51 +201,74 @@ def draw_cube():
             glVertex3fv(vertices[vertex])
     glEnd()
 
-    # Draw grid on the cube faces for better perspective visualization
-    glColor4f(0.8, 0.8, 0.8, 0.3)  # Light gray grid lines
+    glColor4f(0.8, 0.8, 0.8, 0.3)
     step = CUBE_SIZE / 10.0
 
     for i in range(-5, 6):
         pos = i * step
         
         glBegin(GL_LINES)
-        # Grid lines on bottom face (XZ plane, Y = -CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, -CUBE_SIZE/2, pos)
         glVertex3f(CUBE_SIZE/2, -CUBE_SIZE/2, pos)
         glVertex3f(pos, -CUBE_SIZE/2, -CUBE_SIZE/2)
         glVertex3f(pos, -CUBE_SIZE/2, CUBE_SIZE/2)
         
-        # Grid lines on top face (XZ plane, Y = CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, CUBE_SIZE/2, pos)
         glVertex3f(CUBE_SIZE/2, CUBE_SIZE/2, pos)
         glVertex3f(pos, CUBE_SIZE/2, -CUBE_SIZE/2)
         glVertex3f(pos, CUBE_SIZE/2, CUBE_SIZE/2)
         
-        # Grid lines on back face (XY plane, Z = -CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, pos, -CUBE_SIZE/2)
         glVertex3f(CUBE_SIZE/2, pos, -CUBE_SIZE/2)
         glVertex3f(pos, -CUBE_SIZE/2, -CUBE_SIZE/2)
         glVertex3f(pos, CUBE_SIZE/2, -CUBE_SIZE/2)
         
-        # Grid lines on front face (XY plane, Z = CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, pos, CUBE_SIZE/2)
         glVertex3f(CUBE_SIZE/2, pos, CUBE_SIZE/2)
         glVertex3f(pos, -CUBE_SIZE/2, CUBE_SIZE/2)
         glVertex3f(pos, CUBE_SIZE/2, CUBE_SIZE/2)
         
-        # Grid lines on left face (YZ plane, X = -CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, -CUBE_SIZE/2, pos)
         glVertex3f(-CUBE_SIZE/2, CUBE_SIZE/2, pos)
         glVertex3f(-CUBE_SIZE/2, pos, -CUBE_SIZE/2)
         glVertex3f(-CUBE_SIZE/2, pos, CUBE_SIZE/2)
         
-        # Grid lines on right face (YZ plane, X = CUBE_SIZE/2)
         glVertex3f(CUBE_SIZE/2, -CUBE_SIZE/2, pos)
         glVertex3f(CUBE_SIZE/2, CUBE_SIZE/2, pos)
         glVertex3f(CUBE_SIZE/2, pos, -CUBE_SIZE/2)
         glVertex3f(CUBE_SIZE/2, pos, CUBE_SIZE/2)
         glEnd()
 
+def draw_leader_trajectory(leader):
+    glColor3f(1.0, 0.0, 0.0)  # Red color for trajectory
+    glBegin(GL_POINTS)
+    for i, pos in enumerate(leader.trajectory):
+        if i % 2 == 0:  # Draw every other point to create a dotted line effect
+            glVertex3fv(pos)
+    glEnd()
+
+class Button:
+    def __init__(self, x, y, width, height, text, color, text_color, toggle_color):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.text = text
+        self.color = color
+        self.text_color = text_color
+        self.toggle_color = toggle_color
+        self.toggled = False
+        
+    def draw(self, surface):
+        pygame.draw.rect(surface, self.toggle_color if self.toggled else self.color, self.rect)
+        font = pygame.font.SysFont(None, 24)
+        text_surface = font.render(self.text, True, self.text_color)
+        text_rect = text_surface.get_rect(center=self.rect.center)
+        surface.blit(text_surface, text_rect)
+        
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.rect.collidepoint(event.pos):
+                self.toggled = not self.toggled
+                return True
+        return False
 
 def main():
     global MAX_SPEED, ALIGNMENT_WEIGHT, COHESION_WEIGHT, SEPARATION_WEIGHT, NEIGHBOR_RADIUS, SEPARATION_RADIUS
@@ -214,12 +277,10 @@ def main():
     display_width, display_height = 1080, 720
     display = (display_width, display_height)
     screen = pygame.display.set_mode(display, DOUBLEBUF|OPENGL)
-    pygame.display.set_caption("3D Boids Simulation")
+    pygame.display.set_caption("3D Boids Simulation with Leader")
 
-    # Create an overlay surface for UI elements
     ui_surface = pygame.Surface(display, pygame.SRCALPHA)
     
-    # Create sliders
     slider_width = 200
     slider_height = 10
     slider_spacing = 40
@@ -240,10 +301,15 @@ def main():
                0.1, 2.0, SEPARATION_RADIUS, "Separation Radius", (147, 112, 219))
     ]
 
+    leader_button = Button(10, 10, 120, 30, "Leader: ON", (0, 255, 0), (0, 0, 0), (255, 0, 0))
+    path_button = Button(140, 10, 120, 30, "Path: O", (255, 165, 0), (0, 0, 0), (255, 165, 0))
+
     gluPerspective(45, display[0]/display[1], 0.1, 50.0)
     glTranslatef(0.0, 0.0, -15)
 
     boids = [Boid() for _ in range(NUM_BOIDS)]
+    leader = LeaderBoid()
+    leader_active = True
 
     mouse_pressed = False
     last_mouse_pos = None
@@ -259,14 +325,12 @@ def main():
                 pygame.quit()
                 quit()
                 
-            # Handle slider events first
             slider_changed = False
             for slider in sliders:
                 if slider.handle_event(event):
                     slider_changed = True
                     dragging_slider = True
                     
-                    # Update global parameters based on slider values
                     MAX_SPEED = sliders[0].value
                     ALIGNMENT_WEIGHT = sliders[1].value
                     COHESION_WEIGHT = sliders[2].value
@@ -277,7 +341,14 @@ def main():
             if event.type == pygame.MOUSEBUTTONUP:
                 dragging_slider = False
                 
-            # Handle 3D view rotation if not dragging sliders
+            if leader_button.handle_event(event):
+                leader_active = not leader_active
+                leader_button.text = "Leader: ON" if leader_active else "Leader: OFF"
+                
+            if path_button.handle_event(event):
+                leader.toggle_path()
+                path_button.text = "Path: |" if leader.path_type == "straight" else "Path: O"
+                
             if not dragging_slider:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mouse_pressed = True
@@ -285,36 +356,38 @@ def main():
                 elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                     mouse_pressed = False
 
-        # Handle 3D rotation
         if mouse_pressed and last_mouse_pos is not None and not dragging_slider:
             current_mouse_pos = pygame.mouse.get_pos()
             dx = current_mouse_pos[0] - last_mouse_pos[0]
             dy = current_mouse_pos[1] - last_mouse_pos[1]
             last_mouse_pos = current_mouse_pos
 
-            glRotatef(dx * 0.1, 0.0, 1.0, 0.0)   # Rotate horizontally
-            glRotatef(dy * -0.1, 1.0, 0.0, 0.0)  # Rotate vertically
+            glRotatef(dx * 0.1, 0.0, 1.0, 0.0)
+            glRotatef(dy * -0.1, 1.0, 0.0, 0.0)
 
-        # Clear both the 3D scene and UI surface
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-        ui_surface.fill((0, 0, 0, 0))  # Clear UI with transparent background
+        ui_surface.fill((0, 0, 0, 0))
         
-        # 3D rendering
         glEnable(GL_DEPTH_TEST)
         draw_cube()
 
+        if leader_active:
+            leader.update()
+            draw_boid(leader)
+            draw_leader_trajectory(leader)
+
         for boid in boids:
-            boid.update(boids)
+            boid.update(boids, leader if leader_active else None)
             draw_boid(boid)
 
-        # 2D UI rendering
         for slider in sliders:
             slider.draw(ui_surface)
             
-        # Draw help text
-        ui_surface.blit(help_text, (10, 10))
+        leader_button.draw(ui_surface)
+        path_button.draw(ui_surface)
         
-        # Temporarily disable OpenGL to draw the UI
+        ui_surface.blit(help_text, (10, 50))
+        
         glDisable(GL_DEPTH_TEST)
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
@@ -324,13 +397,11 @@ def main():
         glPushMatrix()
         glLoadIdentity()
         
-        # Convert UI surface to a texture and draw it
         ui_texture = pygame.image.tostring(ui_surface, "RGBA", True)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glDrawPixels(display_width, display_height, GL_RGBA, GL_UNSIGNED_BYTE, ui_texture)
         
-        # Restore OpenGL state
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()
         glMatrixMode(GL_MODELVIEW)
