@@ -6,7 +6,7 @@ import numpy as np
 import random
 
 # Simulation parameters
-NUM_BOIDS = 50
+NUM_BOIDS = 75
 MAX_SPEED = 0.02
 NEIGHBOR_RADIUS = 2.0
 SEPARATION_RADIUS = 0.5
@@ -337,24 +337,26 @@ def main():
     slider_x = display_width - slider_width - 20
     
     sliders = [
+        Slider(slider_x, display_height - slider_spacing * 10, slider_width, slider_height, 
+            0.001, 0.05, MAX_SPEED, "Max Speed", (255, 165, 0)),
         Slider(slider_x, display_height - slider_spacing * 9, slider_width, slider_height, 
-               0.001, 0.05, MAX_SPEED, "Max Speed", (255, 165, 0)),
+            0.001, 0.2, ALIGNMENT_WEIGHT, "Alignment", (255, 0, 0)),
         Slider(slider_x, display_height - slider_spacing * 8, slider_width, slider_height, 
-               0.001, 0.2, ALIGNMENT_WEIGHT, "Alignment", (255, 0, 0)),
+            0.001, 0.1, COHESION_WEIGHT, "Cohesion", (0, 255, 0)),
         Slider(slider_x, display_height - slider_spacing * 7, slider_width, slider_height, 
-               0.001, 0.1, COHESION_WEIGHT, "Cohesion", (0, 255, 0)),
+            0.001, 0.2, SEPARATION_WEIGHT, "Separation", (0, 0, 255)),
         Slider(slider_x, display_height - slider_spacing * 6, slider_width, slider_height, 
-               0.001, 0.2, SEPARATION_WEIGHT, "Separation", (0, 0, 255)),
+            0.0, 0.3, PURSUIT_WEIGHT, "Pursuit", (255, 192, 203)),
         Slider(slider_x, display_height - slider_spacing * 5, slider_width, slider_height, 
-               0.0, 0.3, PURSUIT_WEIGHT, "Pursuit", (255, 192, 203)),
+            0.0, 0.3, EVASION_WEIGHT, "Evasion", (147, 112, 219)),
         Slider(slider_x, display_height - slider_spacing * 4, slider_width, slider_height, 
-               0.0, 0.3, EVASION_WEIGHT, "Evasion", (147, 112, 219)),
+            0.001, 0.05, LEADER_SPEED, "Leader Speed", (255, 0, 0)),
         Slider(slider_x, display_height - slider_spacing * 3, slider_width, slider_height, 
-               0.001, 0.05, LEADER_SPEED, "Leader Speed", (255, 0, 0)),
+            0.001, 0.05, EVADE_SPEED, "Evade Speed", (147, 112, 219)),
         Slider(slider_x, display_height - slider_spacing * 2, slider_width, slider_height, 
-               0.001, 0.05, EVADE_SPEED, "Evade Speed", (147, 112, 219)),
+            0.1, 3.0, NEIGHBOR_RADIUS, "Neighbor Radius", (255, 192, 203)),
         Slider(slider_x, display_height - slider_spacing * 1, slider_width, slider_height, 
-               0.1, 3.0, NEIGHBOR_RADIUS, "Neighbor Radius", (255, 192, 203)),
+            0.1, 3.0, SEPARATION_RADIUS, "Separation Radius", (255, 192, 203))
     ]
 
     leader_button = Button(10, 10, 120, 30, "Leader: ON", (0, 255, 0), (0, 0, 0), (255, 0, 0))
@@ -400,6 +402,7 @@ def main():
                     LEADER_SPEED = sliders[6].value
                     EVADE_SPEED = sliders[7].value
                     NEIGHBOR_RADIUS = sliders[8].value
+                    SEPARATION_RADIUS = sliders[9].value
                     
             if event.type == pygame.MOUSEBUTTONUP:
                 dragging_slider = False
