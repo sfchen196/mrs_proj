@@ -2,15 +2,22 @@ import pygame
 import config
 from boids import Boid
 from s_boids import DirectedBoid
-from cm_boids import CollectiveMemoryBoid
+from hetero_boids import HeteroDirectedBoid
 
 pygame.init()
-screen = pygame.display.set_mode((config.WIDTH, config.HEIGHT))
+# New window width = simulation width + 250 for controls.
+screen = pygame.display.set_mode((config.WIDTH + 250, config.HEIGHT))
 clock = pygame.time.Clock()
 
 def create_boids(use_directed=False, position=None, goal=None, use_collective_memory=False):
+    """
+    Create boids for the simulation:
+      - If use_collective_memory is True, return HeteroDirectedBoid instances.
+      - Else if use_directed is True, return standard DirectedBoid instances.
+      - Otherwise, return basic Boid instances.
+    """
     if use_collective_memory:
-        return [CollectiveMemoryBoid(position) for _ in range(config.NUM_BOIDS)]
+        return [HeteroDirectedBoid(position, goal) for _ in range(config.NUM_BOIDS)]
     elif use_directed:
         return [DirectedBoid(position, goal) for _ in range(config.NUM_BOIDS)]
     else:
