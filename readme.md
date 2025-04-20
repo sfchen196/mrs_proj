@@ -48,7 +48,7 @@ This file defines the main Boid class and its associated functions:
 - `limit_speed`: Ensures the velocity does not exceed a specified maximum.  
 - `bounce`: Handles collision with screen edges or removal if walls are active and the boid touches a wall.
 
-**s_boids.py**  
+**directed_boids.py**  
 Defines a `DirectedBoid` class, which inherits from `Boid`. This variant includes a specific target goal. The flocking behavior is extended to steer slightly toward the goal while still respecting alignment, cohesion, and separation. To blend the goal-directed velocity and standard flocking velocity, we use a factor $\alpha$ such that:
 
 $$

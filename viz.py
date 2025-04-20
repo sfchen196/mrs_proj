@@ -1,7 +1,7 @@
 import pygame
 import config
 from boids import Boid
-from s_boids import DirectedBoid
+from directed_boids import DirectedBoid
 from hetero_boids import HeteroDirectedBoid
 
 pygame.init()

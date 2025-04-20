@@ -2,7 +2,7 @@ import numpy as np
 import random
 import config
 import walls
-from s_boids import DirectedBoid
+from directed_boids import DirectedBoid
 from boids import limit_speed
 from number_inputs import selected_params, nonselected_params
 

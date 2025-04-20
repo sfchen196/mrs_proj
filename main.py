@@ -1,7 +1,7 @@
 import pygame
 import config
 from boids import Boid
-from s_boids import DirectedBoid
+from directed_boids import DirectedBoid
 from viz import create_boids, draw_translucent_text, draw_walls, screen, clock
 import walls
 from number_inputs import draw_controllers, handle_controller_event, update_parameters
